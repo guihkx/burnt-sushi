@@ -2,38 +2,61 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, debug ]
   pull_request:
     branches: [ master ]
 
 env:
+  CARGO_NET_RETRY: 3
   CARGO_TERM_COLOR: always
+  RUST_VER: nightly
+  TERM: xterm-256color # needed for colored cargo fmt output
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
     
-    - name: Install latest nightly for i686-pc-windows-msvc
-      uses: actions-rs/toolchain@v1
-      with:
-          target: i686-pc-windows-msvc
-          toolchain: nightly
-          override: true
-    
-    - name: Install latest nightly for x86_64-pc-windows-msvc
-      uses: actions-rs/toolchain@v1
-      with:
-          target: x86_64-pc-windows-msvc
-          toolchain: nightly
-          override: true
-    
-    - name: Install Cap'n Proto
-      run: choco install capnproto
-      
-    - name: Build burnt-sushi-blocker
-      run: cargo build --manifest-path=burnt-sushi-blocker/Cargo.toml --target i686-pc-windows-msvc
-          
-    - name: Build burnt-sushi
-      run: cargo build --manifest-path=shared/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '${{ env.RUST_VER }}'
+          components: rustfmt, clippy
+
+      - name: Install Cap'n Proto
+        run: choco install capnproto
+
+      - name: Run rustfmt on "shared" subfolder
+        run: (cd shared && cargo fmt --all -- --check)
+
+      - name: Run rustfmt on "burnt-sushi-blocker" subfolder
+        run: (cd burnt-sushi-blocker && cargo fmt --all -- --check)
+
+      - name: Run rustfmt on "burnt-sushi" subfolder
+        run: (cd burnt-sushi && cargo fmt --all -- --check || true)
+
+      - name: Run clippy on "shared" subfolder
+        run: (cd shared && cargo clippy)
+
+      - name: Run clippy on "burnt-sushi-blocker" subfolder
+        run: (cd burnt-sushi-blocker && cargo clippy || true)
+
+      - name: Run clippy on "burnt-sushi" subfolder
+        run: (cd burnt-sushi && cargo clippy)
+
+      - name: Build burnt-sushi
+        env:
+          RUSTFLAGS: -C strip=none
+          OUT_DIR: release
+        run: cargo -vv build --manifest-path=burnt-sushi/Cargo.toml --release
+
+      - name: List files recursively
+        run: Get-ChildItem -Recurse
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: burnt-sushi
+          path: release
